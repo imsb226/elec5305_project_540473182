@@ -28,7 +28,7 @@ Disclose parameter count and CPU-side RTF/latency
 
 Frequency-only downsampling to preserve temporal resolution
 
-# G-DPRNN bottleneck:
+G-DPRNN bottleneck:
 
 Intra-frame BiGRU over frequency -> projection + residual + LayerNorm
 
@@ -60,6 +60,6 @@ Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before
 
  ONNX export and CPU demo (text-only quick guide)
 
-# Results (TBD)
+# Results 
 
 To be added: mean ± std for PESQ/STOI/Delta SI-SDR; parameter count (M); CPU RTF/latency; failure cases and error-distribution summaries.
