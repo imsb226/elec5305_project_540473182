@@ -1,4 +1,4 @@
-Speech Enhancement (Lightweight, CPU-Friendly)
+##Speech Enhancement (Lightweight, CPU-Friendly)
 
 Single-channel speech enhancement (WIP). Targets laptop-CPU deployment under < 1M parameters while maintaining practical perceptual/intelligibility quality. Input is complex STFT; the model predicts a Complex Ratio Mask (CRM) and reconstructs waveforms via iSTFT. Backbone: U-Net encoder/decoder that downsamples only along the frequency axis, with a G-DPRNN bottleneck (intra-frame BiGRU, inter-frame UniGRU, both with projection, residuals, and LayerNorm).
 
