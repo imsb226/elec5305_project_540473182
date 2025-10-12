@@ -2,11 +2,11 @@
 
 Single-channel speech enhancement (WIP). Targets laptop-CPU deployment under < 1M parameters while maintaining practical perceptual/intelligibility quality. Input is complex STFT; the model predicts a Complex Ratio Mask (CRM) and reconstructs waveforms via iSTFT. Backbone: U-Net encoder/decoder that downsamples only along the frequency axis, with a G-DPRNN bottleneck (intra-frame BiGRU, inter-frame UniGRU, both with projection, residuals, and LayerNorm).
 
-Status
+# Status
 
 WIP: interfaces and experiments are evolving; breaking changes may occur.
 
-Goals
+# Goals
 
 PESQ(wb) >= 2.95
 
@@ -16,7 +16,7 @@ Delta SI-SDR >= 6.0 dB
 
 Parameters < 1.0M and CPU-friendly latency
 
-Dataset and Protocol
+# Dataset and Protocol
 
 VoiceBank-DEMAND (16 kHz, standard split and SNR settings)
 
@@ -24,11 +24,11 @@ Recommend at least 3 random seeds with mean ± std reporting
 
 Disclose parameter count and CPU-side RTF/latency
 
-Method Snapshot
+# Method Snapshot
 
 Frequency-only downsampling to preserve temporal resolution
 
-G-DPRNN bottleneck:
+# G-DPRNN bottleneck:
 
 Intra-frame BiGRU over frequency -> projection + residual + LayerNorm
 
@@ -36,7 +36,7 @@ Inter-frame UniGRU over time -> projection + residual + LayerNorm
 
 Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before iSTFT
 
-Current Progress
+# Current Progress
 
  Base model prototype (U-Net + G-DPRNN + CRM)
 
@@ -48,7 +48,7 @@ Current Progress
 
  Ablations (bottleneck repeats, hidden sizes, freq-only downsampling)
 
-Roadmap
+# Roadmap
 
  Lightweight Transformer encoder for global context
 
@@ -60,6 +60,6 @@ Roadmap
 
  ONNX export and CPU demo (text-only quick guide)
 
-Results (TBD)
+# Results (TBD)
 
 To be added: mean ± std for PESQ/STOI/Delta SI-SDR; parameter count (M); CPU RTF/latency; failure cases and error-distribution summaries.
