@@ -60,6 +60,10 @@ Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before
 
  ONNX export and CPU demo (text-only quick guide)
 
-# Results 
+# Current Results 
 
-To be added: mean ± std for PESQ/STOI/Delta SI-SDR; parameter count (M); CPU RTF/latency; failure cases and error-distribution summaries.
+To be added: PESQ: 2.893
+             STOI: 94.3%
+             Si-SNR: 18.59dB
+             parameter count (M): 0.0757
+             
