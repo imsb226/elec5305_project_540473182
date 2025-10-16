@@ -5,7 +5,7 @@ from torchmetrics.audio.stoi import ShortTimeObjectiveIntelligibility
 
 SR, N_FFT, HOP = 16000, 512, 256
 WIN = torch.hann_window(N_FFT)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE ="cpu"
 
 CKPT = "model.pth"
 NOISY = "data/noisy.wav"
