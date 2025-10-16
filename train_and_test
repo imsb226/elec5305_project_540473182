@@ -14,8 +14,6 @@ from torch.amp import GradScaler, autocast
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 from torchmetrics.audio.stoi import ShortTimeObjectiveIntelligibility
 
-# -------------------- fixed config --------------------
-# ==== user-editable ====
 DATA_ROOT = r"E:\VOICEBANK_ROOT\VOICEBANK_ROOT"
 OUT_DIR = r"E:\speech\out"
 CKPT_PATH = r"E:\checkpoint\ckpt_final.pth"
@@ -24,8 +22,6 @@ BATCH_SIZE = 32
 LR = 1e-3
 TRAIN_CLIP_SECS = 4.0
 USE_AMP = True
-
-# ==== usually unchanged ====
 SR = 16000
 N_FFT = 512
 HOP = 256
@@ -65,7 +61,6 @@ def sdr(x, s, eps=1e-8):
     den = torch.sum((s-x)**2, -1) + eps
     return 10 * torch.log10(num/den)
 
-# -------------------- data --------------------
 class PairList:
     def __init__(self, noisy_dir, clean_dir):
         self.pairs = []
