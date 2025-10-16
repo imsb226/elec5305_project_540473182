@@ -1,0 +1,6 @@
+torch==2.8.0+cu129
+soundfile==0.13.1
+torchmetrics==1.8.2
+pesq==0.0.4
+pystoi==0.4.1
+numpy==2.1.2
