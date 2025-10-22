@@ -42,7 +42,7 @@ To better capture non-local dependencies across frequency bands for mask estimat
 
 # Roadmap
 
- Lightweight Transformer encoder for global context
+ Lightweight Transformer encoder for global context \n
 
  Multi-objective losses (time-domain MSE + complex-spectrum MSE)
 
