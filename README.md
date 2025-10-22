@@ -24,7 +24,7 @@ Recommend at least 3 random seeds with mean ± std reporting
 
 Disclose parameter count and CPU-side RTF/latency
 
-# Method Snapshot
+# Overview of basic model
 
 Frequency-only downsampling to preserve temporal resolution
 
@@ -36,17 +36,9 @@ Inter-frame UniGRU over time -> projection + residual + LayerNorm
 
 Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before iSTFT
 
-# Current Progress
+# Current Model
 
- Base model prototype (U-Net + G-DPRNN + CRM)
-
- Data preprocessing and alignment checks (16 kHz, unified STFT)
-
- Training logging and metrics (PESQ/STOI/Delta SI-SDR, params, RTF/latency)
-
- Initial baselines and 3-seed reproducibility
-
- Ablations (bottleneck repeats, hidden sizes, freq-only downsampling)
+To better capture non-local dependencies across frequency bands for mask estimation on the time–frequency spectrum, This project places a frequency-axis Transformer before the frequency-domain GRU. This yields a small but consistent improvement over the baseline.
 
 # Roadmap
 
@@ -60,10 +52,16 @@ Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before
 
  ONNX export and CPU demo (text-only quick guide)
 
-# Current Results 
-
+# Results 
+The basic model with three layers of DPRCN Blocks：
 PESQ: 2.929
 STOI: 94.4%
 Si-SNR: 18.38dB
 parameter count (M): 0.158434
-             
+
+The model after adding a frequency-dimension transformer：
+PESQ: 2.954
+STOI: 94.3%
+Si-SNR: 18.51dB
+parameter count (M): 0.184258
+
