@@ -42,7 +42,7 @@ To better capture non-local dependencies across frequency bands for mask estimat
 
 # Roadmap
 
- Lightweight Transformer encoder for global context \n
+ Lightweight Transformer encoder for global context 
 
  Multi-objective losses (time-domain MSE + complex-spectrum MSE)
 
@@ -53,7 +53,7 @@ To better capture non-local dependencies across frequency bands for mask estimat
  ONNX export and CPU demo (text-only quick guide)
 
 # Results 
-The basic model with three layers of DPRCN Blocks：
+The basic model with three layers of DPRCN Blocks：\n
 PESQ: 2.929
 STOI: 94.4%
 Si-SNR: 18.38dB
