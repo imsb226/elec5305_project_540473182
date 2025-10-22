@@ -62,8 +62,8 @@ Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before
 
 # Current Results 
 
-PESQ: 2.930
-STOI: 94.7%
-Si-SNR: 18.41dB
-parameter count (M): 0.1160
+PESQ: 2.929
+STOI: 94.4%
+Si-SNR: 18.38dB
+parameter count (M): 0.158434
              
