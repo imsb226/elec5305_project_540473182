@@ -46,9 +46,9 @@ The basic model with three layers of DPRCN Blocks：
 
 PESQ: 2.929
 
-STOI: 94.4%
+STOI: 94.3%
 
-Si-SNR: 18.38dB
+Si-SNR: 18.73dB
 
 parameter count (M): 0.158434
 
