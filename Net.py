@@ -4,16 +4,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class SinusoidalPE1D(nn.Module):
+# Postion encoding，allowing the multi-head attention module to sense location information
     def __init__(self, d_model: int, max_len: int = 4096):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
         pos = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
         div = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0)/d_model))
-        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 0::2] = torch.sin(pos * div)         # Use sine encoding for odd channels and cosine encoding for even channels
         pe[:, 1::2] = torch.cos(pos * div[:(d_model//2)])
-        self.register_buffer("pe", pe, persistent=False)
+        self.register_buffer("pe", pe, persistent=False)     
 
-    def forward(self, x):  # x: [B, L, C]
+    def forward(self, x): 
         L = x.size(1)
         return x + self.pe[:L, :].unsqueeze(0).to(x.device, x.dtype)
 
@@ -54,6 +55,7 @@ class DeconvBlock(nn.Module):
         return self.act(self.bn(self.deconv(x)))
 
 class GDPRNNBlock(nn.Module):
+# Define the bottleneck(Fre-Transformer+DPCRN)
     def __init__(self, Cg, hidden_intra=64, hidden_inter=64, bidirectional_intra=True,
                  use_freq_transformer: bool = True, freq_tf_nhead: int = 4,
                  freq_tf_ff_mult: int = 2, freq_tf_dropout: float = 0.0, freq_tf_layers: int = 1):
@@ -78,8 +80,8 @@ class GDPRNNBlock(nn.Module):
 
     def forward(self, xg):
         B, Cg, T, Freq = xg.shape
-
-        h = xg.permute(0, 2, 3, 1).contiguous().view(B*T, Freq, Cg)
+        
+        h = xg.permute(0, 2, 3, 1).contiguous().view(B*T, Freq, Cg)    # Reshape the original time-frequency spectrum tensor so that operations can be performed on the frequency dimension individually each time
         if self.use_freq_transformer:
             h = self.freq_tf(h)
 
@@ -107,6 +109,7 @@ class GDPRNNBottleneck(nn.Module):
         return x
 
 class UNetBiGRU(nn.Module):
+# U-Net downsamples/upsamples along frequency to cut params; a frequency-aware Transformer-DPCRN jointly learns time- and frequency-domain features
     def __init__(self, c_in=3, base=16, groups=2, hid_intra=48, hid_inter=48, repeat_gdprnn=1):
         super().__init__()
         c1, c2, c3 = base, base*2, base*2
@@ -145,12 +148,4 @@ class UNetBiGRU(nn.Module):
         crm = torch.tanh(self.out(y))
         return crm
 
-if __name__ == "__main__":
-    torch.manual_seed(0)
-    B, C_in, T, Freq = 2, 3, 64, 256
-    x = torch.randn(B, C_in, T, Freq)
-    net = UNetBiGRU(c_in=C_in, base=16, hid_intra=48, hid_inter=48, repeat_gdprnn=1)
-    with torch.no_grad():
-        y = net(x)
-    print("input :", x.shape)
-    print("output:", y.shape)
+
