@@ -45,17 +45,6 @@ This report makes only one change in the frequency domain branch: placing the fr
 
 # Results 
 
-The basic model with three layers of DPRCN Blocks：
-
-PESQ: 2.929
-
-STOI: 94.3%
-
-Delta Si-SNR: 10.28 dB
-
-parameter count (M): 0.158434
-
-
 The final model：
 
 PESQ: 3.064
