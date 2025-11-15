@@ -194,7 +194,6 @@ def test_and_save(model: nn.Module, loader, out_dir: str):
         S_hat = torch.complex(Mr, Mi) * S_noisy.to(torch.complex64)
         est   = istft(S_hat, length=noisy.shape[-1])  # (1, L)
 
-        # for debugging you could use: est = noisy
 
         # back to original length
         Li = int(L_raw) if not torch.is_tensor(L_raw) else int(L_raw.item())
