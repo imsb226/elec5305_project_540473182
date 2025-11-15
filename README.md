@@ -51,7 +51,7 @@ PESQ: 2.929
 
 STOI: 94.3%
 
-Si-SNR: 18.73dB
+Delta Si-SNR: 10.28 dB
 
 parameter count (M): 0.158434
 
@@ -62,8 +62,7 @@ PESQ: 3.064
 
 STOI: 94.9%
 
-Si-SNR: 10.46dB
+Delta SI-SDR = 10.46 dB
 
-Delta SI-SDR = 10 dB
 parameter count (M): 0.994
 
