@@ -124,10 +124,6 @@ class CDeconvBlock(nn.Module):
 
 class DPRNNBlock(nn.Module):
     def __init__(self, Cg, hidden_intra=64, hidden_inter=64, bidir_intra=True):
-        """
-        Dual-path RNN block.
-        Cg is treated as a real-valued feature dimension (flattened complex channels).
-        """
         super().__init__()
         # Intra-chunk GRU over frequency axis.
         self.intra = nn.GRU(
