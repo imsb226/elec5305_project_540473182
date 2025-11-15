@@ -58,11 +58,12 @@ parameter count (M): 0.158434
 
 The final model：
 
-PESQ: 3.05
+PESQ: 3.064
 
-STOI: 94.7%
+STOI: 94.9%
 
-Si-SNR: 18.7dB
+Si-SNR: 10.46dB
 
-parameter count (M): <1
+Delta SI-SDR = 10 dB
+parameter count (M): 0.994
 
