@@ -47,11 +47,11 @@ This report makes only one change in the frequency domain branch: placing the fr
 
 The final model：
 
-PESQ: 3.064
+PESQ: 3.029
 
-STOI: 94.9%
+STOI: 94.8%
 
-Delta SI-SDR = 10.46 dB
+Delta SI-SDR = 10.64 dB
 
-parameter count (M): 0.994
+parameter count (M): 0.676
 
