@@ -115,6 +115,5 @@ Final model:
 ## Future Work
 
 - Explore lighter or partially shared complex convolutions  
-- Reallocate saved parameters to bottleneck / attention modules  
 - Add explicit CPU latency / RTF benchmarks  
 - Evaluate on additional noisy corpora
