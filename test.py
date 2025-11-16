@@ -7,11 +7,12 @@ from torch.utils.data import Dataset, DataLoader
 from Net import DCCRN_DPRNN
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 from torchmetrics.audio.stoi import ShortTimeObjectiveIntelligibility
-
+from pathlib import Path
 # basic config
-DATA_ROOT = r""
-OUT_DIR   = r""
-CKPT_PATH = r""
+ROOT = Path(__file__).resolve().parent
+DATA_ROOT = ROOT / "test"
+OUT_DIR   =  ROOT / "out"
+CKPT_PATH = ROOT / "model.pth"
 
 SR    = 16000
 N_FFT = 512
