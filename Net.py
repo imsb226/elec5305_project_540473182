@@ -352,15 +352,12 @@ class FramewiseMHSA(nn.Module):
 class DCCRN_DPRNN(nn.Module):
     def __init__(
         self,
-        c_in=2,          # number of input channels (2 for real + imag STFT)
         base=32,
         hid_intra=96,
         hid_inter=96,
         num_dp_blocks=2,
         bidir_intra=True,
-        fba_d_model=96,
-        fba_heads=4,
-        fba_dropout=0.0,
+
     ):
         """
         DCCRN-style complex encoder-decoder with a DPRNN bottleneck and
@@ -389,7 +386,7 @@ class DCCRN_DPRNN(nn.Module):
             bidir_intra=bidir_intra,
         )
 
-        self.fba = FramewiseMHSA()
+        #self.fba = FramewiseMHSA()
 
         # Decoder: complex transposed convolutions with skip connections.
         # Note: cin is the complex channel count before split.
@@ -449,7 +446,7 @@ class DCCRN_DPRNN(nn.Module):
 
         # ----- Bottleneck: DPRNN + frame-wise attention -----
         yb = self.dp(e3)
-        yb = self.fba(yb)
+        #yb = self.fba(yb)
 
         # Concatenate bottleneck output with encoder output at the same scale.
         yb = self._cat_align(yb, e3)
