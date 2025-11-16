@@ -18,7 +18,7 @@ Code and experiments correspond to the project report and the results listed bel
 - PESQ (wideband) ≥ 2.95  
 - STOI ≥ 0.94  
 - Delta SI-SDR ≥ 6.0 dB  
-- Total parameters < 1.0 M and CPU-friendly latency
+- Total parameters < 1.0 M 
 
 ---
 
