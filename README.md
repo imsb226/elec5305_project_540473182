@@ -1,55 +1,121 @@
 ## Speech Enhancement (Lightweight, CPU-Friendly)
 
-Single-channel speech enhancement (WIP). Targets laptop-CPU deployment under < 1M parameters while maintaining practical perceptual/intelligibility quality. Input is complex STFT; the model predicts a Complex Ratio Mask (CRM) and reconstructs waveforms via iSTFT. Backbone: U-Net encoder/decoder that downsamples only along the frequency axis, with a G-DPRNN bottleneck (intra-frame BiGRU, inter-frame UniGRU, both with projection, residuals, and LayerNorm).
+Single-channel speech enhancement model targeting **laptop-CPU deployment** with **< 1M parameters**, while maintaining practical perceptual and intelligibility quality.  
+Input is complex STFT; the model predicts a **Complex Ratio Mask (CRM)** and reconstructs waveforms via iSTFT.
 
-# Status
+Backbone: a U-Net–style encoder/decoder that downsamples **only along the frequency axis**, with a **dual-path recurrent bottleneck** (intra-frequency BiGRU + inter-time GRU, both with projection, residual connections, and LayerNorm).
 
-WIP: interfaces and experiments are evolving; breaking changes may occur.
+---
 
-# Goals
+## Status
 
-PESQ(wb) >= 2.95
+> WIP – interfaces and experiments may still change.
 
-STOI >= 0.94
+---
 
-Delta SI-SDR >= 6.0 dB
+## Goals
 
-Parameters < 1.0M and CPU-friendly latency
+- PESQ (wb) ≥ 2.95  
+- STOI ≥ 0.94  
+- ΔSI-SDR ≥ 6.0 dB  
+- Parameters < 1.0 M and **CPU-friendly latency**
 
-# Dataset and Protocol
+---
 
-VoiceBank-DEMAND (16 kHz, standard split and SNR settings)
+## Dataset and Protocol
 
-Recommend at least 3 random seeds with mean ± std reporting
+- **Dataset**: VoiceBank+DEMAND (16 kHz, standard split and SNR settings)  
+- **Task**: single-channel noisy → clean speech mapping using paired training  
+- Recommended evaluation practice:
+  - At least **3 random seeds** with mean ± std reporting  
+  - Report **parameter count** and **CPU-side RTF/latency**  
 
-Disclose parameter count and CPU-side RTF/latency
+---
 
-# Overview of basic model
+## Model Overview
 
-Frequency-only downsampling to preserve temporal resolution
+### STFT and Masking
 
-G-DPRNN bottleneck:
+- 16 kHz audio  
+- STFT with `n_fft = 512`, `hop = 256`, Hann window  
+- Model input: noisy complex STFT \(Y(f, k)\), split into real/imag channels  
+- Model output: 2-channel CRM \([\Re(M), \Im(M)]\)  
+- Enhanced spectrum: \(\hat{S}(f, k) = M(f,k)\,Y(f,k)\), followed by iSTFT
 
-Intra-frame BiGRU over frequency -> projection + residual + LayerNorm
+### Encoder–Decoder (Complex U-Net)
 
-Inter-frame UniGRU over time -> projection + residual + LayerNorm
+- **Frequency-only downsampling** to preserve temporal resolution  
+- Three complex encoder blocks:
+  - ComplexConv2d → complex BatchNorm → complex PReLU
+  - Stride 2 along frequency, stride 1 along time
+- Three symmetric complex decoder blocks:
+  - ComplexConvTranspose2d → complex BatchNorm → complex PReLU
+  - Skip connections from encoder to decoder at each scale
+- Complex convolutions follow the usual decomposition:
+  - jointly model real and imaginary parts instead of treating them as independent channels
 
-Head outputs a 2-channel CRM (real, imag) applied to the mixture spectrum before iSTFT
+### Dual-Path Recurrent Bottleneck (DPCRN-style)
 
-# Early changes
+- Bottleneck feature shape: \([B, C_g, T, F]\), where \(C_g\) stacks real and imaginary channels
+- **Intra-frequency BiGRU**:
+  - For each time frame, run a BiGRU over the frequency axis
+  - Followed by linear projection, LayerNorm, residual connection
+- **Inter-time GRU**:
+  - For each frequency bin, run a GRU over the time axis
+  - Followed by projection, LayerNorm, residual connection
+- This dual-path structure provides long-range **spectral and temporal context** with relatively small hidden sizes.
 
-This report makes only one change in the frequency domain branch: placing the frequency-dimension Transformer before the frequency-domain BiGRU, forming the structure “Freq-TF → frequency-domain BiGRU → time-domain GRU.” The rationale is that mask estimation requires leveraging non-local correlations across frequency bands, so attention first aggregates global frequency context, and then the GRU handles local continuity and boundary refinement. Since there is no causal constraint along the frequency axis and frequencies at the bottleneck are already downsampled, the computation-to-benefit ratio is better. Experimental results show that under a consistent evaluation pipeline, PESQ sees a slight improvement while STOI remains basically unchanged: this modification primarily improves cross-band gain consistency and noise perception quality (more beneficial for PESQ), whereas STOI relies more on temporal envelopes and low-frequency modulation cues, so it is less affected. Further attempts to introduce a time-dimension Transformer (with causal masking) under the same settings resulted in a decrease in PESQ, possibly due to excessive noise suppression or over-flattening of envelopes caused by time attention, limited effective context, and increased optimization difficulty. Subsequent work will prioritize exploring a combination of channel attention and small-scale GRU to enhance temporal modeling: channel attention dynamically recalibrates speech-relevant features, while TCN/GRU provides sequential modeling and local dynamic control, aiming to improve STOI without significantly increasing latency and parameters, while maintaining or improving PESQ.
+### Frame-wise Self-Attention (Bottleneck)
 
+- One **frame-wise multi-head self-attention block** at the bottleneck:
+  - Treat each time frame as a token (frequency + channels are folded into the feature dimension)
+  - Attention is computed over the time axis only  
+  - Complexity reduced from \(O((T F)^2)\) to \(O(T^2)\)
+- Implemented as:
+  - 1×1 convs for Q/K/V → reshape to \([T, \cdot]\) per head
+  - Multi-head attention over frames
+  - 1×1 conv + LayerNorm + residual
+- Empirically provides a clear gain in PESQ and ΔSI-SDR with only a **small** increase in parameters.
 
-# Results 
+---
 
-The final model：
+## Training Objective
 
-PESQ: 3.035
+- **Spectral loss** on compressed magnitudes:
+  - MSE between \(|\hat{S}|^\gamma\) and \(|S|^\gamma\), with \(\gamma = 0.3\)
+- **Waveform loss**:
+  - L1 loss between enhanced and clean waveforms
+- Total loss:
+  - \(\mathcal{L} = \alpha \mathcal{L}_\text{mag} + (1-\alpha)\mathcal{L}_\text{wav}\)  
+  - In experiments: \(\alpha = 0.5\)
 
-STOI: 94.8%
+---
 
-Delta SI-SDR = 10.68 dB
+## Results (VoiceBank+DEMAND)
 
-parameter count (M): 0.676
+Final model:
 
+- **PESQ (wb)**: 3.035  
+- **STOI**: 94.8 %  
+- **ΔSI-SDR**: 10.68 dB  
+- **Parameters**: 0.676 M  
+
+### Ablation Highlights
+
+- **No complex convolution** (treat real/imag as separate real channels):
+  - Params ↓ to 0.411 M  
+  - Metrics slightly ↓ (PESQ and ΔSI-SDR drop a bit)  
+  - Conclusion: complex conv helps, but gain is modest relative to its parameter cost
+- **No frame-wise self-attention** (keep complex convs, remove attention):
+  - Params ≈ 0.638 M  
+  - Performance drops more noticeably than “no complex conv”  
+  - Conclusion: the bottleneck attention block is a **more cost-effective** component for this setting
+
+---
+
+## Future Work
+
+- Explore lighter or partially shared complex convolutions  
+- Reallocate saved parameters to bottleneck / attention modules  
+- Add explicit CPU latency / RTF benchmarks  
+- Evaluate on additional noisy corpora
