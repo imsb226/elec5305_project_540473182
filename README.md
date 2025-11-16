@@ -134,10 +134,10 @@ Final model:
 
 ---
 
-## Test Set
+## Link
 
-The test set used in this project (VoiceBank+DEMAND split) can be accessed here:
-
+The Dataset used in this project (VoiceBank+DEMAND split) can be accessed here:
+- [Training set (SharePoint link)]https://unisydneyedu-my.sharepoint.com/:u:/g/personal/wzha0912_uni_sydney_edu_au/EdQKwK2HJN9OlrE5wmmp4jAB3opo4N1tCJwdKPJjmUjNnA?e=zbSl6b
 - [Test set (SharePoint link)](https://unisydneyedu-my.sharepoint.com/:u:/g/personal/wzha0912_uni_sydney_edu_au/EfGRocbWKERKqToagpfQZnMBuzgWm0rv0pRHRgQF7zfGZA?e=a3EnQt)
 
 ---
