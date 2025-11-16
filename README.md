@@ -9,7 +9,8 @@ Backbone: a U-Net–style encoder/decoder that downsamples **only along the freq
 
 ## Status
 
-> WIP – interfaces and experiments may still change.
+**Completed.**  
+Code and experiments correspond to the project report and the results listed below.
 
 ---
 
@@ -26,9 +27,8 @@ Backbone: a U-Net–style encoder/decoder that downsamples **only along the freq
 
 - **Dataset**: VoiceBank+DEMAND (16 kHz, standard split and SNR settings)  
 - **Task**: single-channel noisy → clean speech mapping using paired training  
-- Recommended evaluation practice:
-  - At least **3 random seeds** with mean ± std reporting  
-  - Report **parameter count** and **CPU-side RTF/latency**  
+
+
 
 ---
 
@@ -46,48 +46,47 @@ Backbone: a U-Net–style encoder/decoder that downsamples **only along the freq
 
 - **Frequency-only downsampling** to preserve temporal resolution  
 - Three complex encoder blocks:
-  - ComplexConv2d → complex BatchNorm → complex PReLU
-  - Stride 2 along frequency, stride 1 along time
+  - ComplexConv2d → complex BatchNorm → complex PReLU  
+  - Stride 2 along frequency, stride 1 along time  
 - Three symmetric complex decoder blocks:
-  - ComplexConvTranspose2d → complex BatchNorm → complex PReLU
-  - Skip connections from encoder to decoder at each scale
-- Complex convolutions follow the usual decomposition:
-  - jointly model real and imaginary parts instead of treating them as independent channels
+  - ComplexConvTranspose2d → complex BatchNorm → complex PReLU  
+  - Skip connections from encoder to decoder at each scale  
+- Complex convolutions follow the usual decomposition and jointly model real and imaginary parts, instead of treating them as independent real channels.
 
 ### Dual-Path Recurrent Bottleneck (DPCRN-style)
 
-- Bottleneck feature shape: \([B, C_g, T, F]\), where \(C_g\) stacks real and imaginary channels
+- Bottleneck feature shape: \([B, C_g, T, F]\), where \(C_g\) stacks real and imaginary channels  
 - **Intra-frequency BiGRU**:
-  - For each time frame, run a BiGRU over the frequency axis
-  - Followed by linear projection, LayerNorm, residual connection
+  - For each time frame, run a BiGRU over the frequency axis  
+  - Followed by linear projection, LayerNorm, residual connection  
 - **Inter-time GRU**:
-  - For each frequency bin, run a GRU over the time axis
-  - Followed by projection, LayerNorm, residual connection
-- This dual-path structure provides long-range **spectral and temporal context** with relatively small hidden sizes.
+  - For each frequency bin, run a GRU over the time axis  
+  - Followed by projection, LayerNorm, residual connection  
+
+This dual-path structure provides long-range **spectral and temporal context** with relatively small hidden sizes.
 
 ### Frame-wise Self-Attention (Bottleneck)
 
 - One **frame-wise multi-head self-attention block** at the bottleneck:
-  - Treat each time frame as a token (frequency + channels are folded into the feature dimension)
-  - Attention is computed over the time axis only  
-  - Complexity reduced from \(O((T F)^2)\) to \(O(T^2)\)
+  - Treat each time frame as a token (frequency + channels are folded into the feature dimension)  
+  - Attention is computed over the time axis only → complexity \(O(T^2)\) instead of \(O((TF)^2)\)  
 - Implemented as:
-  - 1×1 convs for Q/K/V → reshape to \([T, \cdot]\) per head
-  - Multi-head attention over frames
-  - 1×1 conv + LayerNorm + residual
-- Empirically provides a clear gain in PESQ and ΔSI-SDR with only a **small** increase in parameters.
+  - 1×1 convs for Q/K/V → reshape to \([T, \cdot]\) per head  
+  - Multi-head attention over frames  
+  - 1×1 conv + LayerNorm + residual  
+
+Empirically this block provides a clear gain in PESQ and ΔSI-SDR with only a **small** increase in parameters.
 
 ---
 
 ## Training Objective
 
-- **Spectral loss** on compressed magnitudes:
-  - MSE between \(|\hat{S}|^\gamma\) and \(|S|^\gamma\), with \(\gamma = 0.3\)
-- **Waveform loss**:
-  - L1 loss between enhanced and clean waveforms
-- Total loss:
-  - \(\mathcal{L} = \alpha \mathcal{L}_\text{mag} + (1-\alpha)\mathcal{L}_\text{wav}\)  
-  - In experiments: \(\alpha = 0.5\)
+- **Spectral loss** on compressed magnitudes:  
+  MSE between \(|\hat{S}|^\gamma\) and \(|S|^\gamma\), with \(\gamma = 0.3\)  
+- **Waveform loss**:  
+  L1 loss between enhanced and clean waveforms  
+- Total loss:  
+  \(\mathcal{L} = \alpha \mathcal{L}_\text{mag} + (1-\alpha)\mathcal{L}_\text{wav}\), with \(\alpha = 0.5\)
 
 ---
 
@@ -104,12 +103,12 @@ Final model:
 
 - **No complex convolution** (treat real/imag as separate real channels):
   - Params ↓ to 0.411 M  
-  - Metrics slightly ↓ (PESQ and ΔSI-SDR drop a bit)  
-  - Conclusion: complex conv helps, but gain is modest relative to its parameter cost
+  - Small but consistent drop in PESQ / ΔSI-SDR  
+  - → Complex conv helps, but the gain is modest relative to its parameter cost  
 - **No frame-wise self-attention** (keep complex convs, remove attention):
   - Params ≈ 0.638 M  
-  - Performance drops more noticeably than “no complex conv”  
-  - Conclusion: the bottleneck attention block is a **more cost-effective** component for this setting
+  - More noticeable drop in PESQ / ΔSI-SDR  
+  - → Bottleneck attention is a **more cost-effective** component in this setting
 
 ---
 
