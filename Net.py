@@ -4,44 +4,49 @@ import torch.nn.functional as F
 import math
 
 
-# ===================== Complex basic modules =====================
+# ===================== Basic Complex-Valued Building Blocks =====================
 
 class ComplexConv2d(nn.Module):
     def __init__(self, cin, cout, k=(3, 3), s=(1, 1), p=None, bias=False):
         """
         Complex 2D convolution.
+
         Convention:
-          - Input channels = 2 * cin  (real, imag)
-          - Output channels = 2 * cout
+            - Input channels  = 2 * cin  (real part + imaginary part)
+            - Output channels = 2 * cout
         """
         super().__init__()
         if p is None:
             p = (k[0] // 2, k[1] // 2)
-        # Real and imaginary convolutions share the same input size but have independent weights.
+
+        # Real and imaginary convolutions share the same input features,
+        # but are applied separately to real and imaginary parts.
         self.real = nn.Conv2d(cin, cout, k, stride=s, padding=p, bias=bias)
         self.imag = nn.Conv2d(cin, cout, k, stride=s, padding=p, bias=bias)
 
     def forward(self, x):
-        # Split real and imaginary parts along the channel dimension.
-        xr, xi = torch.chunk(x, 2, dim=1)  
-        # Standard complex convolution: (W_r + j W_i) * (x_r + j x_i)
+        # Split into real and imaginary parts along channel dimension.
+        xr, xi = torch.chunk(x, 2, dim=1)
+        # (a + j b) * (w_r + j w_i) = (a*w_r - b*w_i) + j(a*w_i + b*w_r)
         yr = self.real(xr) - self.imag(xi)
         yi = self.real(xi) + self.imag(xr)
-        # Re-concatenate back into complex representation.
-        return torch.cat([yr, yi], dim=1)  
+        # Concatenate real and imaginary parts back together.
+        return torch.cat([yr, yi], dim=1)
 
 
 class ComplexConvTranspose2d(nn.Module):
     def __init__(self, cin, cout, k=(3, 3), s=(1, 1), p=None, o=(0, 0), bias=False):
         """
-        Complex 2D transposed convolution (deconvolution).
+        Complex 2D transposed convolution (for upsampling).
+
         Convention:
-          - Input channels = 2 * cin
-          - Output channels = 2 * cout
+            - Input channels  = 2 * cin
+            - Output channels = 2 * cout
         """
         super().__init__()
         if p is None:
             p = (k[0] // 2, k[1] // 2)
+
         self.real = nn.ConvTranspose2d(
             cin, cout, k, stride=s, padding=p, output_padding=o, bias=bias
         )
@@ -59,9 +64,9 @@ class ComplexConvTranspose2d(nn.Module):
 class ComplexBN(nn.Module):
     def __init__(self, c):
         """
-        Complex batch norm implemented as two independent real-valued BN layers:
-          - Input channels = 2 * c
-          - BN is applied separately to real and imag parts.
+        BatchNorm for complex feature maps.
+
+        Assumes input channels = 2 * c and applies BN to real/imag parts separately.
         """
         super().__init__()
         self.bn_r = nn.BatchNorm2d(c)
@@ -77,8 +82,9 @@ class ComplexBN(nn.Module):
 class ComplexPReLU(nn.Module):
     def __init__(self, c):
         """
-        Complex PReLU with separate learnable parameters for real and imaginary parts:
-          - Input channels = 2 * c
+        PReLU for complex feature maps.
+
+        Assumes input channels = 2 * c and applies PReLU to real/imag parts separately.
         """
         super().__init__()
         self.act_r = nn.PReLU(c)
@@ -92,9 +98,10 @@ class ComplexPReLU(nn.Module):
 class CConvBlock(nn.Module):
     def __init__(self, cin, cout, k=(3, 3), s=(1, 1), p=None):
         """
-        Complex conv block: ComplexConv2d + ComplexBN + ComplexPReLU.
-        cin, cout are complex channel counts (per real/imag part).
-        Effective input channels = 2 * cin, output = 2 * cout.
+        Complex convolution block: Conv -> BN -> PReLU.
+
+        cin, cout are complex channel counts (real/imag each have cin/cout channels).
+        Actual input channels = 2 * cin, output channels = 2 * cout.
         """
         super().__init__()
         self.conv = ComplexConv2d(cin, cout, k, s, p, bias=False)
@@ -108,7 +115,8 @@ class CConvBlock(nn.Module):
 class CDeconvBlock(nn.Module):
     def __init__(self, cin, cout, k=(3, 3), s=(1, 1), o=(0, 0), p=None):
         """
-        Complex deconv block: ComplexConvTranspose2d + ComplexBN + ComplexPReLU.
+        Complex transposed convolution block: Deconv -> BN -> PReLU.
+
         cin, cout are complex channel counts.
         """
         super().__init__()
@@ -120,12 +128,19 @@ class CDeconvBlock(nn.Module):
         return self.act(self.bn(self.deconv(x)))
 
 
-# ===================== DPRNN & MHSA bottleneck =====================
+# ===================== DPRNN (Dual-Path RNN) =====================
 
 class DPRNNBlock(nn.Module):
     def __init__(self, Cg, hidden_intra=64, hidden_inter=64, bidir_intra=True):
+        """
+        One DPRNN block with:
+            - Intra-GRU: operates along frequency axis for each time frame.
+            - Inter-GRU: operates along time axis for each frequency bin.
+
+        Cg is treated as a real-valued feature dimension here.
+        """
         super().__init__()
-        # Intra-chunk GRU over frequency axis.
+        # Intra-GRU over frequency dimension.
         self.intra = nn.GRU(
             Cg, hidden_intra, num_layers=1, batch_first=True, bidirectional=bidir_intra
         )
@@ -133,7 +148,7 @@ class DPRNNBlock(nn.Module):
         self.intra_proj = nn.Linear(intra_out, Cg)
         self.ln_intra = nn.LayerNorm(Cg)
 
-        # Inter-chunk GRU over time axis.
+        # Inter-GRU over time dimension.
         self.inter = nn.GRU(
             Cg, hidden_inter, num_layers=1, batch_first=True, bidirectional=False
         )
@@ -142,48 +157,58 @@ class DPRNNBlock(nn.Module):
 
     def forward(self, xg):
         """
-        xg: [B, Cg, T, Freq]
+        xg: (B, Cg, T, F), where:
+            B = batch size
+            Cg = feature channels
+            T = time frames
+            F = frequency bins
         """
         B, Cg, T, Freq = xg.shape
 
-        # Intra GRU: operate along frequency, for each time frame independently.
+        # ----- Intra-GRU: model local dependencies across frequency for each time -----
+        # Reshape to merge batch and time dimensions for GRU:
         h = (
-            xg.permute(0, 2, 3, 1)    
+            xg.permute(0, 2, 3, 1)   # (B, T, F, Cg)
               .contiguous()
-              .view(B * T, Freq, Cg)  
+              .view(B * T, Freq, Cg)
         )
         h, _ = self.intra(h)
         h = self.intra_proj(h)
         h = self.ln_intra(h)
+
+        # Restore shape back to (B, Cg, T, F).
         h = (
             h.view(B, T, Freq, Cg)
-             .permute(0, 3, 1, 2)      
+             .permute(0, 3, 1, 2)
              .contiguous()
         )
-        xg = xg + h  # residual fusion
+        xg = xg + h  # Residual connection on frequency modeling.
 
-        # Inter GRU: operate along time, for each frequency bin independently.
+        # ----- Inter-GRU: model dependencies across time for each frequency bin -----
         z = (
-            xg.permute(0, 3, 2, 1)     
+            xg.permute(0, 3, 2, 1)   # (B, F, T, Cg)
               .contiguous()
-              .view(B * Freq, T, Cg)   
+              .view(B * Freq, T, Cg)
         )
         z, _ = self.inter(z)
         z = self.inter_proj(z)
         z = self.ln_inter(z)
+
+        # Restore shape back to (B, Cg, T, F).
         z = (
             z.view(B, Freq, T, Cg)
-             .permute(0, 3, 2, 1)     
+             .permute(0, 3, 2, 1)
              .contiguous()
         )
-        xg = xg + z  # residual fusion
+        xg = xg + z  # Residual connection on temporal modeling.
+
         return xg
 
 
 class DPRNNBottleneck(nn.Module):
     def __init__(self, Cg, hidden_intra=64, hidden_inter=64, num_blocks=2, bidir_intra=True):
         """
-        Stack of DPRNN blocks forming the bottleneck.
+        Stack multiple DPRNN blocks as a bottleneck module.
         """
         super().__init__()
         self.blocks = nn.ModuleList(
@@ -199,112 +224,163 @@ class DPRNNBottleneck(nn.Module):
         return x
 
 
-class SinusoidalPE1D(nn.Module):
-    def __init__(self, d_model: int, max_len: int = 4096):
-        """
-        Standard sinusoidal positional encoding for 1D sequences.
-        """
+# ===================== cfLayerNorm (Channel-Frequency LN) =====================
+
+class CfLayerNorm(nn.Module):
+    """
+    LayerNorm over (channel, frequency) dimensions.
+
+    Input:
+        x: (B, C, T, F)
+
+    For each (B, t), we normalize across (C, F).
+    Learnable gamma/beta act on channels and are shared across frequencies,
+    following TF-GridNet style cfLN.
+    """
+    def __init__(self, num_channels, eps=1e-5):
         super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        pos = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
-        div = torch.exp(
-            torch.arange(0, d_model, 2, dtype=torch.float32)
-            * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(pos * div)
-        pe[:, 1::2] = torch.cos(pos * div[: (d_model // 2)])
-        self.register_buffer("pe", pe, persistent=False)
+        self.eps = eps
+        self.gamma = nn.Parameter(torch.ones(1, num_channels, 1, 1))
+        self.beta = nn.Parameter(torch.zeros(1, num_channels, 1, 1))
 
     def forward(self, x):
-        """
-        x: [B, T, d_model]
-        """
-        T = x.size(1)
-        return x + self.pe[:T, :].unsqueeze(0).to(x.device, x.dtype)
+        # Mean and variance across channel and frequency, for each time step.
+        mean = x.mean(dim=(1, 3), keepdim=True)
+        var = ((x - mean) ** 2).mean(dim=(1, 3), keepdim=True)
+        x_hat = (x - mean) / torch.sqrt(var + self.eps)
+        return x_hat * self.gamma + self.beta
 
+
+# ===================== Frame-wise Multi-Head Self-Attention =====================
 
 class FramewiseMHSA(nn.Module):
-    def __init__(self, Cg, d_model=256, nhead=4, dropout=0.0):
+    """
+    Frame-wise multi-head self-attention over the time dimension,
+    inspired by TF-GridNet cross-frame self-attention.
+
+    Input:
+        x: (B, Cg, T, F)
+
+    Here:
+        Cg = D = bottleneck channel count (real-valued features after complex split).
+        Self-attention is computed along the time axis for each frequency set.
+    """
+    def __init__(self, Cg=96, num_heads=4, E=24):
         """
-        Frame-wise multi-head self-attention over time.
-        Input Cg is the real-valued bottleneck channel dimension.
+        Args:
+            Cg        : input/output channel size (D).
+            num_heads : L, number of attention heads.
+            E         : query/key embedding size per head (TF-GridNet's E).
+                        Value embedding per head uses Dh = Cg / num_heads.
         """
         super().__init__()
-        self.pre = nn.Linear(Cg, d_model, bias=False)
-        self.pe = SinusoidalPE1D(d_model)
-        self.mha = nn.MultiheadAttention(
-            d_model, nhead, dropout=dropout, batch_first=True
-        )
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, 4 * d_model),
-            nn.ReLU(inplace=True),
-            nn.Linear(4 * d_model, d_model),
-        )
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.post = nn.Linear(d_model, Cg, bias=False)
-        # Learnable gate controlling how much attention output is fused back.
-        self.alpha = nn.Parameter(torch.tensor(0.0))
+        assert Cg % num_heads == 0, "Cg must be divisible by num_heads"
+
+        self.Cg = Cg
+        self.L = num_heads
+        self.E = E
+        self.Dh = Cg // num_heads  # Value dimension per head.
+
+        # Q/K/V are produced by 1x1 convs followed by PReLU + cfLN.
+        self.q_conv = nn.Conv2d(Cg, num_heads * E, kernel_size=1)
+        self.k_conv = nn.Conv2d(Cg, num_heads * E, kernel_size=1)
+        self.v_conv = nn.Conv2d(Cg, num_heads * self.Dh, kernel_size=1)
+
+        self.q_act = nn.PReLU()
+        self.k_act = nn.PReLU()
+        self.v_act = nn.PReLU()
+
+        self.q_ln = CfLayerNorm(num_heads * E)
+        self.k_ln = CfLayerNorm(num_heads * E)
+        self.v_ln = CfLayerNorm(num_heads * self.Dh)
+
+        # Output projection after concatenating all heads.
+        self.out_conv = nn.Conv2d(Cg, Cg, kernel_size=1)
+        self.out_act = nn.PReLU()
+        self.out_ln = CfLayerNorm(Cg)
 
     def forward(self, x):
         """
-        x: [B, Cg, T, Freq]
+        x: (B, Cg, T, F)
         """
-        B, Cg, T, Freq = x.shape
+        B, Cg, T, F = x.shape
+        L, E, Dh = self.L, self.E, self.Dh
 
-        # Average over frequency to get one token per time frame.
-        g = x.mean(dim=-1).permute(0, 2, 1).contiguous() 
+        # ----- 1) Q, K, V projection -----
+        q = self.q_ln(self.q_act(self.q_conv(x)))  # (B, L*E,  T, F)
+        k = self.k_ln(self.k_act(self.k_conv(x)))  # (B, L*E,  T, F)
+        v = self.v_ln(self.v_act(self.v_conv(x)))  # (B, L*Dh, T, F)
 
-        # Project to transformer dimension and add positional encoding.
-        h = self.pre(g)
-        h = self.pe(h)
+        # ----- 2) Reshape to separate heads -----
+        q = q.view(B, L, E, T, F)
+        k = k.view(B, L, E, T, F)
+        v = v.view(B, L, Dh, T, F)
 
-        # Self-attention over time.
-        attn_out, _ = self.mha(h, h, h, need_weights=False)
-        h = self.norm1(h + attn_out)
+        # Move time/frequency to middle for convenience: (B, L, T, F, E/Dh).
+        q = q.permute(0, 1, 3, 4, 2).contiguous()
+        k = k.permute(0, 1, 3, 4, 2).contiguous()
+        v = v.permute(0, 1, 3, 4, 2).contiguous()
 
-        # Feed-forward network with residual connection.
-        ff = self.ffn(h)
-        h = self.norm2(h + ff)
+        # Flatten (F, E) or (F, Dh) so we attend over time only.
+        q = q.view(B, L, T, F * E)
+        k = k.view(B, L, T, F * E)
+        v = v.view(B, L, T, F * Dh)
 
-        # Project back to Cg and broadcast over frequency bins.
-        h = self.post(h).permute(0, 2, 1).unsqueeze(-1)   
-        h = h.expand(-1, -1, -1, Freq)                  
+        # ----- 3) Scaled dot-product attention along time axis -----
+        # Scale factor from TF-GridNet: sqrt(L * F * E).
+        scale = math.sqrt(L * F * E)
 
-        # Gated residual fusion.
-        return x + torch.sigmoid(self.alpha) * h
+        # Attention logits: for each head, relate all time frames to each other.
+        attn_scores = torch.matmul(q, k.transpose(-1, -2)) / scale  # (B, L, T, T)
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+
+        # Weighted sum of V over time.
+        attn_out = torch.matmul(attn_weights, v)  # (B, L, T, F*Dh)
+
+        # ----- 4) Restore to (B, Cg, T, F) by merging heads -----
+        attn_out = attn_out.view(B, L, T, F, Dh)
+        attn_out = attn_out.permute(0, 1, 4, 2, 3).contiguous()  # (B, L, Dh, T, F)
+        attn_out = attn_out.view(B, Cg, T, F)
+
+        # ----- 5) Output projection + residual connection -----
+        y = self.out_ln(self.out_act(self.out_conv(attn_out)))
+        return x + y
 
 
-# ===================== Main network: DCCRN_DPRNN =====================
+# ===================== Main Network: DCCRN + DPRNN + Framewise MHSA =====================
 
 class DCCRN_DPRNN(nn.Module):
     def __init__(
         self,
-        c_in=2,          # Input channels, typically 2: [real, imag]
+        c_in=2,          # number of input channels (2 for real + imag STFT)
         base=32,
         hid_intra=96,
         hid_inter=96,
         num_dp_blocks=2,
         bidir_intra=True,
-        fba_d_model=128,
+        fba_d_model=96,
         fba_heads=4,
         fba_dropout=0.0,
     ):
+        """
+        DCCRN-style complex encoder-decoder with a DPRNN bottleneck and
+        frame-wise attention in the bottleneck.
+
+        The network estimates a complex mask in the STFT domain.
+        """
         super().__init__()
 
-        # Optional projection if input has more than 2 channels.
-        # Currently not used in forward; kept here for future extension.
-        self.in_proj = nn.Conv2d(c_in, 2, kernel_size=1, bias=False)
+        # Encoder complex channel configuration.
+        c1, c2, c3 = base, int(base * 1.5), int(base * 1.5)
 
-        c1, c2, c3 = base, base * 2, base * 2
-
-        # Encoder: cin/cout are complex channel counts.
+        # Encoder: cin is complex channel count (1 complex channel = real+imag).
         self.e1 = CConvBlock(cin=1,  cout=c1, k=(3, 3), s=(1, 1))
         self.e2 = CConvBlock(cin=c1, cout=c2, k=(3, 3), s=(1, 2))
         self.e3 = CConvBlock(cin=c2, cout=c3, k=(3, 3), s=(1, 2))
 
-        # Bottleneck: DPRNN + frame-wise full-band attention.
-        Cg = 2 * c3   # Treat complex channels as a flat real dimension.
+        # Bottleneck: DPRNN + frame-wise multi-head self-attention.
+        # Here Cg is the real-valued channel dimension after complex split (2 * c3).
+        Cg = 2 * c3
         self.dp = DPRNNBottleneck(
             Cg=Cg,
             hidden_intra=hid_intra,
@@ -312,72 +388,84 @@ class DCCRN_DPRNN(nn.Module):
             num_blocks=num_dp_blocks,
             bidir_intra=bidir_intra,
         )
-        self.fba = FramewiseMHSA(
-            Cg=Cg, d_model=fba_d_model, nhead=fba_heads, dropout=fba_dropout
-        )
 
-        # Decoder: again cin/cout are complex channel counts.
-        self.d3 = CDeconvBlock(cin=c3,      cout=c2, k=(3, 3), s=(1, 2), o=(0, 1))
-        self.d2 = CDeconvBlock(cin=c2 * 2,  cout=c1, k=(3, 3), s=(1, 2), o=(0, 1))
+        self.fba = FramewiseMHSA()
+
+        # Decoder: complex transposed convolutions with skip connections.
+        # Note: cin is the complex channel count before split.
+        self.d3 = CDeconvBlock(cin=c3 * 2, cout=c2, k=(3, 3), s=(1, 2), o=(0, 1))
+        self.d2 = CDeconvBlock(cin=c2 * 2, cout=c1, k=(3, 3), s=(1, 2), o=(0, 1))
         self.d1 = CConvBlock   (cin=c1 * 2, cout=c1, k=(3, 3), s=(1, 1))
 
-        # Output mask branches for real and imaginary parts.
+        # Final 1x1 convolutions to predict real and imaginary masks separately.
         self.out_r = nn.Conv2d(c1, 1, kernel_size=1)
         self.out_i = nn.Conv2d(c1, 1, kernel_size=1)
 
     @staticmethod
     def _cat_align(a, b):
-  
-        # 1) Align frequency dimension by trimming to the minimum length.
+        """
+        Complex skip-connection concatenation with frequency alignment.
+
+        Inputs:
+            a, b: complex tensors of shape (B, 2*Ca, T, Fa) and (B, 2*Cb, T, Fb)
+
+        Steps:
+            1. Align along frequency axis by cropping to the minimum frequency.
+            2. Split real/imag parts for each tensor.
+            3. Concatenate all real parts, then all imaginary parts.
+            4. Merge back to a single complex tensor with channel layout:
+               [all real channels, all imaginary channels].
+        """
+        # Align frequency dimension by cropping to the smallest F.
         F = min(a.size(-1), b.size(-1))
         a = a[..., :F]
         b = b[..., :F]
 
-        # 2) Split into real and imaginary parts.
-        ar, ai = torch.chunk(a, 2, dim=1) 
-        br, bi = torch.chunk(b, 2, dim=1) 
+        # Split into real/imag.
+        ar, ai = torch.chunk(a, 2, dim=1)
+        br, bi = torch.chunk(b, 2, dim=1)
 
-        # 3) Concatenate real parts and imaginary parts separately.
-        real = torch.cat([ar, br], dim=1)  
-        imag = torch.cat([ai, bi], dim=1)  
+        # Concatenate real and imaginary parts separately.
+        real = torch.cat([ar, br], dim=1)
+        imag = torch.cat([ai, bi], dim=1)
 
-        # 4) Merge back into complex representation.
-        return torch.cat([real, imag], dim=1) 
+        # Rebuild complex tensor.
+        return torch.cat([real, imag], dim=1)
 
     def forward(self, x):
         """
         Forward pass.
 
         Args:
-            x: [B, 2, T, F]
-               Complex spectrogram with 1 complex channel (real, imag).
+            x: (B, 2, T, F), input complex STFT (real + imag in channel dimension).
 
         Returns:
-            Complex mask of shape [B, 2, T, F].
+            Complex mask M_hat: (B, 2, T, F), to be applied to noisy STFT.
         """
-        # If you want to support arbitrary c_in, uncomment:
-        # x = self.in_proj(x)
-
         # ----- Encoder -----
-        e1 = self.e1(x)   
-        e2 = self.e2(e1) 
-        e3 = self.e3(e2)    
+        e1 = self.e1(x)
+        e2 = self.e2(e1)
+        e3 = self.e3(e2)
 
-        # ----- Bottleneck (DPRNN + frame-wise attention) -----
-        yb = self.dp(e3)   
-        yb = self.fba(yb)  
+        # ----- Bottleneck: DPRNN + frame-wise attention -----
+        yb = self.dp(e3)
+        yb = self.fba(yb)
+
+        # Concatenate bottleneck output with encoder output at the same scale.
+        yb = self._cat_align(yb, e3)
 
         # ----- Decoder with complex skip connections -----
-        d3 = self.d3(yb)             
-        d3 = self._cat_align(d3, e2) 
+        d3 = self.d3(yb)
+        d3 = self._cat_align(d3, e2)
 
-        d2 = self.d2(d3)             
-        d2 = self._cat_align(d2, e1)  
+        d2 = self.d2(d3)
+        d2 = self._cat_align(d2, e1)
 
-        d1 = self.d1(d2)            
+        d1 = self.d1(d2)
 
         # ----- Output complex mask -----
-        dr, di = torch.chunk(d1, 2, dim=1)  
-        mr = torch.tanh(self.out_r(dr))     
-        mi = torch.tanh(self.out_i(di))      
-        return torch.cat([mr, mi], dim=1)  
+        dr, di = torch.chunk(d1, 2, dim=1)     # Split final complex features.
+        mr = torch.tanh(self.out_r(dr))        # Real part of mask.
+        mi = torch.tanh(self.out_i(di))        # Imaginary part of mask.
+
+        return torch.cat([mr, mi], dim=1)
