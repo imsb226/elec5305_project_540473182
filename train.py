@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
-from Complex import DCCRN_DPRNN
+from Net import DCCRN_DPRNN
 from torch.amp import GradScaler, autocast
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 from torchmetrics.audio.stoi import ShortTimeObjectiveIntelligibility
