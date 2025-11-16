@@ -31,10 +31,6 @@ Code and experiments correspond to the project report and the results listed bel
   - STOI  
   - Delta SI-SDR (improvement over the noisy mixture)
 
-If you extend this repository, it is recommended to:
-
-- run at least 3 random seeds and report mean ± std,  
-- report both parameter count and CPU-side real-time factor (RTF) or latency.
 
 ---
 
