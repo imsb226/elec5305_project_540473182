@@ -1,119 +1,67 @@
-## Speech Enhancement (Lightweight, CPU-Friendly)
-
-Single-channel speech enhancement model targeting **laptop-CPU deployment** with **< 1M parameters**, while maintaining practical perceptual and intelligibility quality.  
-Input is complex STFT; the model predicts a **Complex Ratio Mask (CRM)** and reconstructs waveforms via iSTFT.
-
-Backbone: a U-Net–style encoder/decoder that downsamples **only along the frequency axis**, with a **dual-path recurrent bottleneck** (intra-frequency BiGRU + inter-time GRU, both with projection, residual connections, and LayerNorm).
-
----
-
-## Status
-
-**Completed.**  
-Code and experiments correspond to the project report and the results listed below.
-
----
-
-## Goals
-
-- PESQ (wb) ≥ 2.95  
-- STOI ≥ 0.94  
-- ΔSI-SDR ≥ 6.0 dB  
-- Parameters < 1.0 M and 
-
----
-
-## Dataset and Protocol
-
-- **Dataset**: VoiceBank+DEMAND (16 kHz, standard split and SNR settings)  
-- **Task**: single-channel noisy → clean speech mapping using paired training  
-
-
-
----
-
 ## Model Overview
 
-### STFT and Masking
-
-- 16 kHz audio  
-- STFT with `n_fft = 512`, `hop = 256`, Hann window  
-- Model input: noisy complex STFT \(Y(f, k)\), split into real/imag channels  
-- Model output: 2-channel CRM \([\Re(M), \Im(M)]\)  
-- Enhanced spectrum: \(\hat{S}(f, k) = M(f,k)\,Y(f,k)\), followed by iSTFT
+- Sample rate: 16 kHz  
+- STFT: n_fft = 512, hop = 256, Hann window  
+- Input: noisy complex STFT Y(f, k), split into two channels (real part and imaginary part)  
+- Output: a 2-channel complex ratio mask (CRM), [Re(M), Im(M)]  
+- Enhanced spectrum: `S_hat(f, k) = M(f, k) * Y(f, k)`  
+- Waveform reconstruction: inverse STFT (iSTFT) applied to `S_hat`  
 
 ### Encoder–Decoder (Complex U-Net)
 
-- **Frequency-only downsampling** to preserve temporal resolution  
-- Three complex encoder blocks:
-  - ComplexConv2d → complex BatchNorm → complex PReLU  
-  - Stride 2 along frequency, stride 1 along time  
-- Three symmetric complex decoder blocks:
-  - ComplexConvTranspose2d → complex BatchNorm → complex PReLU  
-  - Skip connections from encoder to decoder at each scale  
-- Complex convolutions follow the usual decomposition and jointly model real and imaginary parts, instead of treating them as independent real channels.
+The encoder–decoder follows a U-Net style architecture that downsamples only along the frequency axis and keeps the original temporal resolution. The encoder has three complex convolution blocks; each block consists of:
+
+- complex Conv2d on the stacked real/imag channels,  
+- complex BatchNorm (separate normalisation for real and imaginary parts),  
+- complex PReLU activation.
+
+Frequency is downsampled by a stride of 2 in the encoder, and upsampled by complex transposed convolution in the decoder. Three symmetric decoder blocks mirror the encoder, and skip connections link encoder and decoder features at the same scale so that fine spectral details are preserved. Real and imaginary parts are always processed jointly, rather than being treated as two independent real-valued channels.
 
 ### Dual-Path Recurrent Bottleneck (DPCRN-style)
 
-- Bottleneck feature shape: \([B, C_g, T, F]\), where \(C_g\) stacks real and imaginary channels  
-- **Intra-frequency BiGRU**:
-  - For each time frame, run a BiGRU over the frequency axis  
-  - Followed by linear projection, LayerNorm, residual connection  
-- **Inter-time GRU**:
-  - For each frequency bin, run a GRU over the time axis  
-  - Followed by projection, LayerNorm, residual connection  
+Between the encoder and decoder, the model uses a dual-path recurrent bottleneck inspired by DPCRN/DPRNN. The bottleneck feature has shape `[B, Cg, T, F]`, where:
 
-This dual-path structure provides long-range **spectral and temporal context** with relatively small hidden sizes.
+- `B` = batch size,  
+- `Cg` = channel dimension after stacking real and imaginary parts,  
+- `T` = number of time frames,  
+- `F` = downsampled frequency bins.
+
+The dual-path block contains:
+
+- an **intra-frequency BiGRU** that runs over the frequency axis for each time frame, followed by a linear projection, LayerNorm and residual connection;  
+- an **inter-time GRU** that runs over the time axis for each frequency bin, again followed by projection, LayerNorm and residual.
+
+This structure allows the model to capture long-range dependencies in both frequency (formants, harmonics) and time (onsets, long noise segments) with relatively small hidden sizes, which is important for keeping the model lightweight.
 
 ### Frame-wise Self-Attention (Bottleneck)
 
-- One **frame-wise multi-head self-attention block** at the bottleneck:
-  - Treat each time frame as a token (frequency + channels are folded into the feature dimension)  
-  - Attention is computed over the time axis only → complexity \(O(T^2)\) instead of \(O((TF)^2)\)  
-- Implemented as:
-  - 1×1 convs for Q/K/V → reshape to \([T, \cdot]\) per head  
-  - Multi-head attention over frames  
-  - 1×1 conv + LayerNorm + residual  
+On top of the dual-path bottleneck, a single **frame-wise multi-head self-attention block** is applied at the bottleneck. Each time frame is treated as a token; the frequency dimension and channels are folded into the feature dimension. Attention is computed over the time axis only, so the complexity scales roughly as O(T^2) instead of O((T * F)^2).
 
-Empirically this block provides a clear gain in PESQ and ΔSI-SDR with only a **small** increase in parameters.
+Implementation details:
 
----
+- 1x1 convolutions generate Q, K and V from the bottleneck feature.  
+- Q, K and V are reshaped into `[num_heads, T, feature_per_head]`.  
+- Standard multi-head self-attention is computed over frames.  
+- The result is projected back with a 1x1 convolution, followed by LayerNorm and a residual connection.
 
-## Training Objective
+This block adds global temporal context at the bottleneck with a very small increase in parameter count, and in experiments it gives a clear gain in PESQ and delta SI-SDR.
 
-- **Spectral loss** on compressed magnitudes:  
-  MSE between \(|\hat{S}|^\gamma\) and \(|S|^\gamma\), with \(\gamma = 0.3\)  
-- **Waveform loss**:  
-  L1 loss between enhanced and clean waveforms  
-- Total loss:  
-  \(\mathcal{L} = \alpha \mathcal{L}_\text{mag} + (1-\alpha)\mathcal{L}_\text{wav}\), with \(\alpha = 0.5\)
+### Training Objective and Metrics
 
----
+The model is trained to predict a CRM that improves both the STFT magnitude structure and the time-domain waveform:
 
-## Results (VoiceBank+DEMAND)
+- spectral loss: mean squared error between compressed magnitudes `|S_hat|^gamma` and `|S|^gamma` with `gamma = 0.3`;  
+- waveform loss: L1 loss between the enhanced and clean waveforms;  
+- total loss: weighted sum of spectral and waveform losses.
 
-Final model:
+Evaluation is done on the VoiceBank+DEMAND test set using:
 
-- **PESQ (wb)**: 3.035  
-- **STOI**: 94.8 %  
-- **ΔSI-SDR**: 10.68 dB  
-- **Parameters**: 0.676 M  
+- PESQ (wideband),  
+- STOI,  
+- delta SI-SDR (improvement over the noisy mixture).
 
-### Ablation Highlights
+### Test Set
 
-- **No complex convolution** (treat real/imag as separate real channels):
-  - Params ↓ to 0.411 M  
-  - Small but consistent drop in PESQ / ΔSI-SDR  
-  - → Complex conv helps, but the gain is modest relative to its parameter cost  
-- **No frame-wise self-attention** (keep complex convs, remove attention):
-  - Params ≈ 0.638 M  
-  - More noticeable drop in PESQ / ΔSI-SDR  
-  - → Bottleneck attention is a **more cost-effective** component in this setting
+The test set used in this project (VoiceBank+DEMAND split) is available here:
 
----
-
-## Future Work
-
-- Explore lighter or partially shared complex convolutions  
-- Add explicit CPU latency / RTF benchmarks  
-- Evaluate on additional noisy corpora
+- [Test set (SharePoint link)](https://unisydneyedu-my.sharepoint.com/:u:/g/personal/wzha0912_uni_sydney_edu_au/EfGRocbWKERKqToagpfQZnMBuzgWm0rv0pRHRgQF7zfGZA?e=a3EnQt)
