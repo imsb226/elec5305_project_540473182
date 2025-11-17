@@ -23,7 +23,7 @@ def sdr(x, s, eps=1e-8):
     return 10 * torch.log10((torch.sum(s**2, -1) + eps) / (torch.sum((s - x)**2, -1) + eps))
 
 if __name__ == "__main__":
-    model = DCCRN_DPRNN(base=16).to(DEVICE)
+    model = DCCRN_DPRNN().to(DEVICE)
     state = torch.load(CKPT, map_location=DEVICE)
     model.load_state_dict(state["model"] if isinstance(state, dict) and "model" in state else state, strict=True)
     model.eval()
@@ -37,8 +37,8 @@ if __name__ == "__main__":
     noisy_t = torch.from_numpy(noisy).unsqueeze(0).to(DEVICE)
     clean_t = torch.from_numpy(clean).unsqueeze(0).to(DEVICE)
     S = torch.stft(noisy_t, n_fft=N_FFT, hop_length=HOP, win_length=N_FFT, window=WIN.to(DEVICE), return_complex=True, center=True)
-    Sr, Si, Sm = S.real, S.imag, torch.abs(S)
-    feats = torch.stack([Sr.permute(0,2,1), Si.permute(0,2,1), Sm.permute(0,2,1)], dim=1)
+    Sr, Si = S.real, S.imag
+    feats = torch.stack([Sr.permute(0,2,1), Si.permute(0,2,1)], dim=1)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[Model] params={n_params}")
     with torch.no_grad():
