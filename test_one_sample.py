@@ -1,5 +1,5 @@
 import os, torch, soundfile as sf
-from Net import UNetBiGRU
+from Net import DCCRN_DPRNN
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 from torchmetrics.audio.stoi import ShortTimeObjectiveIntelligibility
 
@@ -23,7 +23,7 @@ def sdr(x, s, eps=1e-8):
     return 10 * torch.log10((torch.sum(s**2, -1) + eps) / (torch.sum((s - x)**2, -1) + eps))
 
 if __name__ == "__main__":
-    model = UNetBiGRU(base=16).to(DEVICE)
+    model = DCCRN_DPRNN(base=16).to(DEVICE)
     state = torch.load(CKPT, map_location=DEVICE)
     model.load_state_dict(state["model"] if isinstance(state, dict) and "model" in state else state, strict=True)
     model.eval()
